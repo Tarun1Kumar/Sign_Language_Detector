@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SignBridge — Real-Time Sign Language AI</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --nb:#00d4ff;--np:#b44dff;--nc:#00ffea;
+  --bg:#020408;--bgd:#060c14;
+  --card:rgba(8,18,32,0.85);
+  --bg2:rgba(0,212,255,0.04);
+  --glow:rgba(0,212,255,0.25);
+  --dim:rgba(0,212,255,0.1);
+  --tb:#e8f4ff;--tm:rgba(180,210,240,0.6);
+  --fd:'Exo 2',sans-serif;--fm:'JetBrains Mono',monospace;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tb);font-family:var(--fd);overflow-x:hidden;min-height:100vh}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bgd)}::-webkit-scrollbar-thumb{background:var(--nb);border-radius:2px}
+#root{min-height:100vh}
+
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 20px rgba(0,212,255,.3),0 0 40px rgba(0,212,255,.1)}50%{box-shadow:0 0 40px rgba(0,212,255,.6),0 0 80px rgba(0,212,255,.2)}}
+@keyframes scanLine{0%{transform:translateY(-100%);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateY(100vh);opacity:0}}
+@keyframes ripple{0%{transform:scale(.95);opacity:1}100%{transform:scale(1.5);opacity:0}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes pop{0%{transform:scale(.8);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+
+.grid-bg{position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,.03)1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,.03)1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+.scan{position:fixed;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--nb),transparent);animation:scanLine 8s linear infinite;z-index:1;pointer-events:none}
+
+.gc{background:var(--card);border:1px solid var(--glow);backdrop-filter:blur(20px);border-radius:16px;position:relative;overflow:hidden}
+.gc::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,212,255,.04)0%,transparent 50%,rgba(180,77,255,.04)100%);pointer-events:none}
+
+.nt{background:linear-gradient(135deg,var(--nb),var(--np));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+.btn{background:linear-gradient(135deg,rgba(0,212,255,.12),rgba(180,77,255,.12));border:1px solid var(--glow);color:var(--nb);padding:9px 20px;border-radius:8px;font-family:var(--fd);font-weight:600;font-size:13px;cursor:pointer;transition:all .18s;letter-spacing:.4px}
+.btn:hover{background:linear-gradient(135deg,rgba(0,212,255,.28),rgba(180,77,255,.28));box-shadow:0 0 18px rgba(0,212,255,.35);transform:translateY(-1px)}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-red{border-color:rgba(255,80,80,.4);color:#ff6666;background:rgba(255,80,80,.08)}
+.btn-red:hover{background:rgba(255,80,80,.2);box-shadow:0 0 18px rgba(255,80,80,.3)}
+.btn-green{border-color:rgba(0,255,160,.4);color:#00ffa0;background:rgba(0,255,160,.08)}
+.btn-green:hover{background:rgba(0,255,160,.2);box-shadow:0 0 18px rgba(0,255,160,.3)}
+.btn-active{background:linear-gradient(135deg,rgba(0,212,255,.22),rgba(180,77,255,.12));border-color:var(--nb)!important;color:var(--nb)!important}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(2,4,8,.88);border-bottom:1px solid var(--dim);backdrop-filter:blur(20px)}
+
+input[type=text]{background:rgba(0,212,255,.05);border:1px solid var(--glow);color:var(--tb);padding:10px 14px;border-radius:8px;font-family:var(--fd);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+input[type=text]:focus{border-color:var(--nb);box-shadow:0 0 12px rgba(0,212,255,.2)}
+
+.fps{font-family:var(--fm);font-size:11px;color:var(--nc);background:rgba(0,255,234,.1);border:1px solid rgba(0,255,234,.2);padding:2px 8px;border-radius:4px}
+.hi{border-left:2px solid var(--nb);padding:8px 12px;margin-bottom:8px;background:rgba(0,212,255,.04);border-radius:0 8px 8px 0;animation:fadeUp .25s ease}
+
+.cbar{height:8px;background:rgba(0,212,255,.1);border-radius:4px;overflow:hidden}
+.cbar-f{height:100%;background:linear-gradient(90deg,var(--nb),var(--np));border-radius:4px;box-shadow:0 0 8px rgba(0,212,255,.4);transition:width .35s ease}
+
+@media(max-width:900px){.mgrid{flex-direction:column!important}.side{width:100%!important}}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="scan"></div>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ─────────────────────────────────────────────
+// LANDMARK UTILITIES
+// ─────────────────────────────────────────────
+function landmarksToVector(lm) {
+  // Normalize: translate wrist to origin, scale by palm size
+  const wrist = lm[0];
+  const palmSize = Math.sqrt((lm[9].x-wrist.x)**2+(lm[9].y-wrist.y)**2+(lm[9].z-wrist.z)**2) || 1;
+  const v = [];
+  for (const p of lm) {
+    v.push((p.x - wrist.x) / palmSize);
+    v.push((p.y - wrist.y) / palmSize);
+    v.push(((p.z||0) - (wrist.z||0)) / palmSize);
+  }
+  return v; // 63-dim vector
+}
+
+function euclidean(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i]-b[i])**2;
+  return Math.sqrt(s);
+}
+
+// KNN classifier — k=5, returns {sign, confidence} or null
+function knnClassify(vec, trainedSigns, k = 5) {
+  if (!trainedSigns || trainedSigns.length === 0) return null;
+  const dists = [];
+  for (const ts of trainedSigns) {
+    for (const sample of ts.samples) {
+      dists.push({ sign: ts.label, d: euclidean(vec, sample) });
+    }
+  }
+  if (dists.length === 0) return null;
+  dists.sort((a,b) => a.d - b.d);
+  const knn = dists.slice(0, Math.min(k, dists.length));
+  const votes = {};
+  let totalWeight = 0;
+  for (const n of knn) {
+    const w = 1 / (n.d + 1e-6);
+    votes[n.sign] = (votes[n.sign] || 0) + w;
+    totalWeight += w;
+  }
+  const sorted = Object.entries(votes).sort((a,b) => b[1]-a[1]);
+  const best = sorted[0];
+  const rawConf = best[1] / totalWeight; // 0..1
+  // Tightened: must be dominant AND close enough to a real sample
+  if (rawConf < 0.45 || knn[0].d > 1.2) return null;
+  // Scale confidence 0-100 based on how close nearest neighbor is
+  const distScore = Math.max(0, 1 - knn[0].d / 1.2);
+  const confidence = Math.round(40 + distScore * 60);
+  return { sign: best[0], confidence };
+}
+
+// Temporal smoothing: majority vote over last N frames
+function useSmoothDetection(raw, windowSize = 7) {
+  const buf = useRef([]);
+  const confBuf = useRef({});
+  const [smoothed, setSmoothed] = useState(null);
+  // Use a counter ref to force effect to run every frame
+  const frameCount = useRef(0);
+  useEffect(() => {
+    frameCount.current++;
+    const sign = raw ? raw.sign : null;
+    const conf = raw ? raw.confidence : 0;
+    buf.current.push(sign);
+    if (sign) confBuf.current[sign] = conf; // track latest confidence per sign
+    if (buf.current.length > windowSize) buf.current.shift();
+    const counts = {};
+    for (const s of buf.current) { if (s) counts[s] = (counts[s]||0)+1; }
+    const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const best = entries[0];
+    // Require 45% of frames to agree (more responsive, less locked)
+    if (best && best[1] >= Math.ceil(windowSize * 0.45)) {
+      setSmoothed({ sign: best[0], confidence: confBuf.current[best[0]] || 70 });
+    } else {
+      setSmoothed(null);
+    }
+  }); // run every render — raw object changes each frame
+  return smoothed;
+}
+
+// ─────────────────────────────────────────────
+// SHARED MEDIAPIPE CONTEXT
+// Single hands instance, multiple consumers via callbacks
+// ─────────────────────────────────────────────
+const mpRef = { hands: null, camera: null, callbacks: [], videoEl: null };
+
+function initMP(videoEl, onResults) {
+  if (mpRef.hands && mpRef.videoEl === videoEl) {
+    mpRef.callbacks = [onResults];
+    return;
+  }
+  if (mpRef.camera) { try { mpRef.camera.stop(); } catch(e){} }
+  mpRef.videoEl = videoEl;
+  mpRef.callbacks = [onResults];
+  const hands = new window.Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
+  hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.75, minTrackingConfidence:0.65 });
+  hands.onResults(r => { for (const cb of mpRef.callbacks) cb(r); });
+  mpRef.hands = hands;
+  if (window.Camera) {
+    mpRef.camera = new window.Camera(videoEl, {
+      onFrame: async () => { if (mpRef.hands) await mpRef.hands.send({ image: videoEl }); },
+      width:640, height:480
+    });
+    mpRef.camera.start();
+  }
+}
+
+function stopMP() {
+  if (mpRef.camera) { try { mpRef.camera.stop(); } catch(e){} mpRef.camera = null; }
+  mpRef.hands = null; mpRef.videoEl = null; mpRef.callbacks = [];
+}
+
+// ─────────────────────────────────────────────
+// APP STATE: trained signs live here (shared)
+// ─────────────────────────────────────────────
+const AppState = { trainedSigns: [] };
+
+// ─────────────────────────────────────────────
+// NAVBAR
+// ─────────────────────────────────────────────
+function Navbar({ tab, setTab }) {
+  const tabs = ['DETECT','TRAIN','SETTINGS'];
+  return (
+    <nav>
+      <div style={{maxWidth:1300,margin:'0 auto',padding:'0 20px',display:'flex',alignItems:'center',justifyContent:'space-between',height:58}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:34,height:34,borderRadius:8,background:'linear-gradient(135deg,rgba(0,212,255,.28),rgba(180,77,255,.28))',border:'1px solid rgba(0,212,255,.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--nb)" strokeWidth="2">
+              <path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+              <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
+            </svg>
+          </div>
+          <span style={{fontSize:19,fontWeight:700,letterSpacing:1}} className="nt">SignBridge</span>
+          <span style={{fontSize:10,color:'rgba(0,212,255,.45)',fontFamily:'JetBrains Mono',letterSpacing:2}}>AI v3.0</span>
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          {tabs.map(t=>(
+            <button key={t} className={`btn ${tab===t?'btn-active':''}`} onClick={()=>setTab(t)}
+              style={{fontSize:11,padding:'6px 14px',letterSpacing:1}}>{t}</button>
+          ))}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:'#00ffa0',boxShadow:'0 0 7px #00ffa0'}}></div>
+          <span style={{fontSize:11,color:'#00ffa0',fontFamily:'JetBrains Mono'}}>LIVE</span>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+// ─────────────────────────────────────────────
+// DETECT PAGE
+// ─────────────────────────────────────────────
+function DetectPage({ trainedSigns }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [camActive, setCamActive] = useState(false);
+  const [rawDetected, setRawDetected] = useState(null);
+  const detected = useSmoothDetection(rawDetected, 10);
+  const [history, setHistory] = useState([]);
+  const [sentence, setSentence] = useState([]);
+  const [tts, setTts] = useState(false);
+  const [fps, setFps] = useState(0);
+  const prevSign = useRef(null);
+  const fCount = useRef(0);
+  const fTime = useRef(Date.now());
+
+  const onResults = useCallback((results) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if (results.image) {
+      ctx.save(); ctx.scale(-1,1); ctx.translate(-canvas.width,0);
+      ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+      ctx.restore();
+    }
+    if (results.multiHandLandmarks?.length > 0) {
+      const lm = results.multiHandLandmarks[0];
+      const mir = lm.map(p=>({...p,x:1-p.x}));
+      if (window.drawConnectors && window.HAND_CONNECTIONS) {
+        window.drawConnectors(ctx,mir,window.HAND_CONNECTIONS,{color:'rgba(0,212,255,.85)',lineWidth:2});
+        window.drawLandmarks(ctx,mir,{color:'rgba(180,77,255,.95)',fillColor:'rgba(0,212,255,.7)',lineWidth:1,radius:3.5});
+      }
+      const vec = landmarksToVector(lm);
+      const result = knnClassify(vec, trainedSigns.current, 5);
+      setRawDetected(result);
+    } else {
+      setRawDetected(null);
+    }
+    fCount.current++;
+    const now = Date.now();
+    if (now - fTime.current >= 1000) { setFps(fCount.current); fCount.current=0; fTime.current=now; }
+  }, []);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
+      if (videoRef.current) { videoRef.current.srcObject = stream; }
+      setCamActive(true);
+      setTimeout(() => { if (videoRef.current) initMP(videoRef.current, onResults); }, 300);
+    } catch(e) {
+      alert('Camera access denied. Please allow camera and reload.');
+    }
+  };
+
+  useEffect(() => {
+    if (!detected) {
+      // Reset prev sign after a null gap so the same sign can re-trigger
+      prevSign.current = null;
+      return;
+    }
+    if (prevSign.current === detected.sign) return;
+    prevSign.current = detected.sign;
+    setHistory(h=>[{sign:detected.sign,confidence:detected.confidence,time:new Date().toLocaleTimeString()},...h.slice(0,29)]);
+    setSentence(s=>[...s.slice(-9),detected.sign]);
+    if (tts) { const u=new SpeechSynthesisUtterance(detected.sign); u.rate=0.9; speechSynthesis.speak(u); }
+  }, [detected?.sign, tts]);
+
+  const hasTraining = trainedSigns.current?.length > 0;
+
+  return (
+    <div style={{padding:'78px 20px 40px',maxWidth:1300,margin:'0 auto'}}>
+      <div style={{textAlign:'center',marginBottom:32,animation:'fadeUp .5s ease'}}>
+        <div style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--nb)',letterSpacing:4,marginBottom:10}}>◆ YOUR TRAINED SIGNS ONLY ◆</div>
+        <h1 style={{fontSize:'clamp(24px,3.5vw,46px)',fontWeight:900,lineHeight:1.1,marginBottom:12}}>
+          <span className="nt">Real-Time Sign Detection</span>
+        </h1>
+        <p style={{fontSize:14,color:'var(--tm)',maxWidth:460,margin:'0 auto'}}>
+          Detects only the signs <em style={{color:'var(--nb)'}}>you</em> trained — using KNN matching on your landmark samples.
+        </p>
+      </div>
+
+      {!hasTraining && (
+        <div style={{textAlign:'center',padding:'32px 20px',marginBottom:24,background:'rgba(180,77,255,.07)',border:'1px solid rgba(180,77,255,.25)',borderRadius:14}}>
+          <div style={{fontSize:28,marginBottom:12}}>🧠</div>
+          <div style={{fontWeight:700,fontSize:16,color:'var(--np)',marginBottom:6}}>No trained signs yet</div>
+          <div style={{fontSize:13,color:'var(--tm)'}}>Go to the <strong style={{color:'var(--nb)'}}>TRAIN</strong> tab, add a label, and capture samples. Then come back here.</div>
+        </div>
+      )}
+
+      <div style={{display:'flex',gap:20,flexWrap:'wrap'}} className="mgrid">
+        <div style={{flex:'1 1 500px'}}>
+          <div className="gc" style={{animation:'pulseGlow 2.5s ease-in-out infinite',padding:0,overflow:'hidden',borderRadius:18,position:'relative'}}>
+            <div style={{position:'absolute',top:10,left:10,zIndex:10,display:'flex',gap:7,alignItems:'center'}}>
+              {camActive && <span className="fps">{fps} FPS</span>}
+              {detected && <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'#00ffa0',background:'rgba(0,255,160,.1)',border:'1px solid rgba(0,255,160,.25)',padding:'2px 7px',borderRadius:4}}>LIVE</span>}
+              {camActive && !detected && <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--tm)',background:'rgba(0,0,0,.5)',padding:'2px 7px',borderRadius:4}}>NO HAND</span>}
+            </div>
+            <div style={{position:'relative',paddingBottom:'75%',background:'#000'}}>
+              <video ref={videoRef} autoPlay playsInline muted style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',transform:'scaleX(-1)',opacity:camActive?1:0}}/>
+              <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
+              {!camActive && (
+                <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:18,background:'radial-gradient(ellipse at center,rgba(0,212,255,.07)0%,rgba(2,4,8,.96)70%)'}}>
+                  <div style={{position:'relative'}}>
+                    <div style={{width:76,height:76,border:'2px solid var(--nb)',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <div style={{position:'absolute',inset:-8,border:'1px solid rgba(0,212,255,.3)',borderRadius:'50%',animation:'ripple 2s ease infinite'}}></div>
+                      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--nb)" strokeWidth="1.5">
+                        <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <button className="btn" onClick={startCamera} style={{fontSize:15,padding:'13px 34px'}}>⚡ Start Camera</button>
+                </div>
+              )}
+            </div>
+            <div style={{padding:12,borderTop:'1px solid var(--dim)',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              <button className={`btn ${tts?'btn-green':''}`} onClick={()=>setTts(!tts)} style={{fontSize:11,padding:'5px 12px'}}>
+                🔊 TTS {tts?'ON':'OFF'}
+              </button>
+              <button className="btn btn-red" onClick={()=>{setSentence([]);setHistory([]);prevSign.current=null;}} style={{fontSize:11,padding:'5px 12px'}}>
+                ✕ Clear
+              </button>
+              <span style={{marginLeft:'auto',fontSize:11,color:'var(--tm)',fontFamily:'JetBrains Mono'}}>
+                {trainedSigns.current?.length||0} sign{trainedSigns.current?.length===1?'':'s'} trained
+              </span>
+            </div>
+          </div>
+
+          {detected ? (
+            <div className="gc" key={detected.sign} style={{marginTop:16,padding:20,textAlign:'center',border:'1px solid rgba(0,212,255,.4)',animation:'pop .3s ease'}}>
+              <div style={{fontSize:11,fontFamily:'JetBrains Mono',color:'var(--tm)',marginBottom:8,letterSpacing:2}}>DETECTED SIGN</div>
+              <div style={{fontSize:'clamp(34px,5vw,60px)',fontWeight:900,marginBottom:12}} className="nt">{detected.sign}</div>
+              <div style={{marginBottom:4}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--tm)',marginBottom:5}}>
+                  <span>Confidence</span>
+                  <span style={{fontFamily:'JetBrains Mono',color:'var(--nb)'}}>{detected.confidence}%</span>
+                </div>
+                <div className="cbar"><div className="cbar-f" style={{width:`${detected.confidence}%`}}></div></div>
+              </div>
+            </div>
+          ) : camActive ? (
+            <div className="gc" style={{marginTop:16,padding:20,textAlign:'center',opacity:.5}}>
+              <div style={{fontSize:13,color:'var(--tm)'}}>Show a trained hand sign to the camera...</div>
+            </div>
+          ) : null}
+
+          <div className="gc" style={{marginTop:16,padding:18}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--tm)',letterSpacing:1}}>SENTENCE</span>
+              <button className="btn" onClick={()=>{if(sentence.length&&tts){const u=new SpeechSynthesisUtterance(sentence.join(' '));speechSynthesis.speak(u);}}} style={{fontSize:10,padding:'4px 10px'}}>▶ SPEAK</button>
+            </div>
+            <div style={{minHeight:44,background:'var(--bg2)',borderRadius:10,padding:10,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+              {sentence.length===0
+                ? <span style={{color:'var(--tm)',fontSize:12}}>Detected signs form a sentence here...</span>
+                : sentence.map((s,i)=>(
+                  <span key={i} style={{background:'linear-gradient(135deg,rgba(0,212,255,.15),rgba(180,77,255,.1))',border:'1px solid var(--glow)',borderRadius:6,padding:'4px 11px',fontSize:13,fontWeight:600,color:'var(--nb)'}}>{s}</span>
+                ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="side" style={{width:300,flexShrink:0}}>
+          <div className="gc" style={{padding:18,display:'flex',flexDirection:'column',maxHeight:640}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--tm)',letterSpacing:1}}>DETECTION LOG</span>
+              <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--np)'}}>{history.length}</span>
+            </div>
+            <div style={{flex:1,overflowY:'auto'}}>
+              {history.length===0
+                ? <div style={{textAlign:'center',padding:'30px 0',color:'var(--tm)'}}><div style={{fontSize:28,marginBottom:8}}>🤲</div><div style={{fontSize:12}}>No signs detected yet</div></div>
+                : history.map((h,i)=>(
+                  <div key={i} className="hi">
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontWeight:700,fontSize:14,color:'var(--nb)'}}>{h.sign}</span>
+                      <span style={{fontSize:9,fontFamily:'JetBrains Mono',color:'var(--tm)'}}>{h.time}</span>
+                    </div>
+                    <div style={{fontSize:10,color:'var(--tm)',marginTop:2}}>Confidence: <span style={{color:'var(--np)'}}>{h.confidence}%</span></div>
+                  </div>
+                ))}
+            </div>
+            <button className="btn btn-red" onClick={()=>setHistory([])} style={{marginTop:10,width:'100%',fontSize:11}}>Clear Log</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TRAIN PAGE
+// ─────────────────────────────────────────────
+function TrainPage({ trainedSigns, setTrainedSigns }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [camReady, setCamReady] = useState(false);
+  const [label, setLabel] = useState('');
+  const [capturing, setCapturing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const TARGET = 40;
+  const samplesBuffer = useRef([]);
+  const captureRef = useRef(false);
+  const [fps, setFps] = useState(0);
+  const fCount = useRef(0);
+  const fTime = useRef(Date.now());
+  const [lastFrame, setLastFrame] = useState(null); // for preview
+
+  const finishCapture = useCallback((capturedLabel, samples) => {
+    captureRef.current = false;
+    setCapturing(false);
+    setTrainedSigns(prev => {
+      const existing = prev.findIndex(s => s.label === capturedLabel);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = { label: capturedLabel, samples: [...updated[existing].samples, ...samples] };
+        return updated;
+      }
+      return [...prev, { label: capturedLabel, samples }];
+    });
+    samplesBuffer.current = [];
+    setProgress(0);
+  }, [setTrainedSigns]);
+
+  const onResults = useCallback((results) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if (results.image) {
+      ctx.save(); ctx.scale(-1,1); ctx.translate(-canvas.width,0);
+      ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+      ctx.restore();
+    }
+    fCount.current++;
+    const now = Date.now();
+    if (now - fTime.current >= 1000) { setFps(fCount.current); fCount.current=0; fTime.current=now; }
+
+    if (results.multiHandLandmarks?.length > 0) {
+      const lm = results.multiHandLandmarks[0];
+      const mir = lm.map(p=>({...p,x:1-p.x}));
+      if (window.drawConnectors && window.HAND_CONNECTIONS) {
+        window.drawConnectors(ctx,mir,window.HAND_CONNECTIONS,{color:captureRef.current?'rgba(0,255,160,.9)':'rgba(0,212,255,.8)',lineWidth:2});
+        window.drawLandmarks(ctx,mir,{color:'rgba(180,77,255,.95)',fillColor:captureRef.current?'rgba(0,255,160,.7)':'rgba(0,212,255,.7)',lineWidth:1,radius:3.5});
+      }
+      // Capture samples during capture mode
+      if (captureRef.current && samplesBuffer.current.length < TARGET) {
+        samplesBuffer.current.push(landmarksToVector(lm));
+        setProgress(samplesBuffer.current.length);
+        if (samplesBuffer.current.length >= TARGET) {
+          const capturedLabel = samplesBuffer.current._label;
+          const samples = [...samplesBuffer.current];
+          finishCapture(capturedLabel, samples);
+        }
+      }
+      setLastFrame('hand');
+    } else {
+      setLastFrame('no-hand');
+    }
+  }, [finishCapture]);
+
+  const startCapture = () => {
+    if (!label.trim() || !camReady) return;
+    samplesBuffer.current = [];
+    samplesBuffer.current._label = label.trim().toUpperCase();
+    setProgress(0);
+    setCapturing(true);
+    captureRef.current = true;
+  };
+
+  const stopCapture = () => {
+    captureRef.current = false;
+    setCapturing(false);
+    samplesBuffer.current = [];
+    setProgress(0);
+  };
+
+  const startCam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCamReady(true);
+      setTimeout(() => { if (videoRef.current) initMP(videoRef.current, onResults); }, 300);
+    } catch(e) { alert('Camera access denied.'); }
+  };
+
+  const deleteSign = (lbl) => {
+    setTrainedSigns(prev => prev.filter(s => s.label !== lbl));
+  };
+
+  const addMoreSamples = (lbl) => {
+    setLabel(lbl);
+  };
+
+  return (
+    <div style={{padding:'78px 20px 40px',maxWidth:1100,margin:'0 auto'}}>
+      <div style={{marginBottom:28}}>
+        <div style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--np)',letterSpacing:3,marginBottom:8}}>◆ TRAIN YOUR OWN SIGNS ◆</div>
+        <h2 style={{fontSize:30,fontWeight:800}} className="nt">Sign Training</h2>
+        <p style={{color:'var(--tm)',marginTop:6,fontSize:13,maxWidth:520}}>
+          Type a label, hold your hand sign steady in front of the camera, then click <strong style={{color:'var(--nb)'}}>Start Capture</strong>. The system records {TARGET} landmark samples from your actual hand pose. No preset data — only what you teach it.
+        </p>
+      </div>
+
+      <div style={{display:'flex',gap:20,flexWrap:'wrap'}} className="mgrid">
+        <div style={{flex:'1 1 420px'}}>
+          <div className="gc" style={{padding:0,overflow:'hidden',borderRadius:18,marginBottom:18,position:'relative',animation:capturing?'pulseGlow 1.5s ease-in-out infinite':'none',borderColor:capturing?'rgba(0,255,160,.5)':undefined}}>
+            <div style={{position:'absolute',top:10,left:10,zIndex:10,display:'flex',gap:7,alignItems:'center'}}>
+              {camReady && <span className="fps">{fps} FPS</span>}
+              {capturing && <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'#00ffa0',background:'rgba(0,255,160,.15)',border:'1px solid rgba(0,255,160,.4)',padding:'2px 8px',borderRadius:4}}>● CAPTURING</span>}
+              {camReady && !capturing && <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--nb)',background:'rgba(0,212,255,.1)',border:'1px solid rgba(0,212,255,.2)',padding:'2px 7px',borderRadius:4}}>READY</span>}
+            </div>
+            <div style={{position:'relative',paddingBottom:'75%',background:'#000'}}>
+              <video ref={videoRef} autoPlay playsInline muted style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',transform:'scaleX(-1)',opacity:camReady?1:0}}/>
+              <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
+              {!camReady && (
+                <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,background:'radial-gradient(ellipse at center,rgba(0,212,255,.07)0%,rgba(2,4,8,.96)70%)'}}>
+                  <button className="btn" onClick={startCam} style={{fontSize:14,padding:'12px 30px'}}>⚡ Start Camera</button>
+                </div>
+              )}
+              {capturing && (
+                <div style={{position:'absolute',bottom:10,left:10,right:10,background:'rgba(0,0,0,.75)',borderRadius:8,padding:'8px 12px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'JetBrains Mono',marginBottom:5}}>
+                    <span style={{color:'#00ffa0'}}>Capturing: <strong>{samplesBuffer.current._label}</strong></span>
+                    <span style={{color:'var(--nb)'}}>{progress} / {TARGET}</span>
+                  </div>
+                  <div className="cbar" style={{height:5}}>
+                    <div className="cbar-f" style={{width:`${(progress/TARGET)*100}%`,background:'linear-gradient(90deg,#00ffa0,var(--nb))'}}></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="gc" style={{padding:20}}>
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,color:'var(--tm)',letterSpacing:1,display:'block',marginBottom:6}}>SIGN LABEL (e.g. HELLO, WATER, HELP)</label>
+              <input type="text" value={label} onChange={e=>setLabel(e.target.value.toUpperCase())}
+                placeholder="Type your sign name..." disabled={capturing}
+                onKeyDown={e=>{ if(e.key==='Enter') startCapture(); }}/>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              {!capturing
+                ? <button className="btn btn-green" onClick={startCapture} disabled={!label.trim()||!camReady} style={{flex:1,fontSize:13,padding:'11px'}}>
+                    📸 Capture {TARGET} Samples
+                  </button>
+                : <button className="btn btn-red" onClick={stopCapture} style={{flex:1,fontSize:13,padding:'11px'}}>
+                    ⏹ Stop Capture
+                  </button>
+              }
+            </div>
+            {!camReady && <div style={{marginTop:10,fontSize:11,color:'rgba(255,160,0,.7)',textAlign:'center'}}>Start camera first to enable capture</div>}
+          </div>
+        </div>
+
+        <div style={{flex:'1 1 280px'}}>
+          <div className="gc" style={{padding:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--tm)',letterSpacing:1}}>TRAINED SIGNS</span>
+              <span style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--np)'}}>{trainedSigns.length} sign{trainedSigns.length===1?'':'s'}</span>
+            </div>
+            {trainedSigns.length === 0
+              ? <div style={{textAlign:'center',padding:'28px 0',color:'var(--tm)'}}>
+                  <div style={{fontSize:30,marginBottom:8}}>📭</div>
+                  <div style={{fontSize:12}}>Trained signs appear here</div>
+                  <div style={{fontSize:11,marginTop:4,color:'rgba(0,212,255,.4)'}}>Capture at least 1 sign to start detecting</div>
+                </div>
+              : trainedSigns.map(ts=>(
+                <div key={ts.label} style={{background:'rgba(0,212,255,.04)',border:'1px solid rgba(0,212,255,.14)',borderRadius:10,padding:14,marginBottom:10}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <span style={{fontWeight:700,fontSize:16,color:'var(--nb)'}}>{ts.label}</span>
+                    <div style={{display:'flex',gap:6}}>
+                      <button className="btn" onClick={()=>addMoreSamples(ts.label)} style={{fontSize:10,padding:'3px 9px'}}>+ More</button>
+                      <button className="btn btn-red" onClick={()=>deleteSign(ts.label)} style={{fontSize:10,padding:'3px 9px'}}>✕</button>
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:'var(--tm)',marginBottom:6}}>
+                    <span style={{color:'var(--nc)',fontFamily:'JetBrains Mono'}}>{ts.samples.length}</span> landmark samples
+                  </div>
+                  <div className="cbar" style={{height:3}}>
+                    <div className="cbar-f" style={{width:`${Math.min(100,(ts.samples.length/TARGET)*100)}%`}}></div>
+                  </div>
+                </div>
+              ))
+            }
+            {trainedSigns.length > 0 && (
+              <div style={{marginTop:14,padding:12,background:'rgba(0,255,160,.05)',border:'1px solid rgba(0,255,160,.15)',borderRadius:8}}>
+                <div style={{fontSize:11,color:'#00ffa0',fontWeight:600,marginBottom:4}}>✓ Ready to detect</div>
+                <div style={{fontSize:11,color:'var(--tm)'}}>Switch to <strong style={{color:'var(--nb)'}}>DETECT</strong> tab and show your hand to the camera.</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SETTINGS PAGE
+// ─────────────────────────────────────────────
+function SettingsPage({ trainedSigns, setTrainedSigns }) {
+  const Toggle = ({v,onChange})=>(
+    <div onClick={()=>onChange(!v)} style={{width:42,height:22,borderRadius:11,background:v?'linear-gradient(90deg,var(--nb),var(--np))':'rgba(0,212,255,.1)',border:`1px solid ${v?'var(--nb)':'var(--dim)'}`,cursor:'pointer',position:'relative',transition:'all .2s',flexShrink:0}}>
+      <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:2,left:v?22:2,transition:'left .2s'}}></div>
+    </div>
+  );
+  const [settings,setSettings] = useState({hc:false,offline:false});
+  const update=(k,v)=>setSettings(s=>({...s,[k]:v}));
+
+  return (
+    <div style={{padding:'78px 20px 40px',maxWidth:640,margin:'0 auto'}}>
+      <div style={{marginBottom:28}}>
+        <div style={{fontSize:10,fontFamily:'JetBrains Mono',color:'var(--np)',letterSpacing:3,marginBottom:8}}>◆ CONFIGURATION ◆</div>
+        <h2 style={{fontSize:28,fontWeight:800}} className="nt">Settings</h2>
+      </div>
+
+      <div className="gc" style={{padding:22,marginBottom:18}}>
+        <div style={{fontSize:11,color:'var(--tm)',letterSpacing:2,marginBottom:18,fontWeight:600}}>TRAINING DATA</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 0',borderBottom:'1px solid var(--dim)'}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:600}}>Total trained signs</div>
+            <div style={{fontSize:11,color:'var(--tm)',marginTop:2}}>{trainedSigns.length} signs · {trainedSigns.reduce((a,s)=>a+s.samples.length,0)} total samples</div>
+          </div>
+          <span style={{fontFamily:'JetBrains Mono',fontSize:18,color:'var(--nb)',fontWeight:700}}>{trainedSigns.length}</span>
+        </div>
+        <div style={{paddingTop:14}}>
+          <button className="btn btn-red" onClick={()=>{ if(confirm('Delete ALL trained signs?')) setTrainedSigns([]); }} style={{fontSize:12,width:'100%',padding:'10px'}}>
+            🗑 Clear All Training Data
+          </button>
+        </div>
+      </div>
+
+      <div className="gc" style={{padding:22,marginBottom:18}}>
+        <div style={{fontSize:11,color:'var(--tm)',letterSpacing:2,marginBottom:18,fontWeight:600}}>DISPLAY</div>
+        {[
+          {label:'High Contrast Mode',sub:'Enhanced text visibility',k:'hc'},
+          {label:'Offline Cache',sub:'Store landmark model locally',k:'offline'},
+        ].map(({label,sub,k})=>(
+          <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 0',borderBottom:'1px solid var(--dim)'}}>
+            <div><div style={{fontSize:14,fontWeight:600}}>{label}</div><div style={{fontSize:11,color:'var(--tm)',marginTop:2}}>{sub}</div></div>
+            <Toggle v={settings[k]} onChange={v=>update(k,v)}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="gc" style={{padding:22}}>
+        <div style={{fontSize:11,color:'var(--tm)',letterSpacing:2,marginBottom:14,fontWeight:600}}>HOW KNN DETECTION WORKS</div>
+        <div style={{fontSize:12,color:'var(--tm)',lineHeight:1.8}}>
+          <p>1. MediaPipe extracts <strong style={{color:'var(--nb)'}}>21 hand landmarks</strong> (x, y, z) from your webcam.</p>
+          <p style={{marginTop:8}}>2. These are normalized into a <strong style={{color:'var(--nb)'}}>63-dimensional vector</strong> relative to wrist position and palm scale.</p>
+          <p style={{marginTop:8}}>3. When you capture a sign, those vectors are saved as <strong style={{color:'var(--nb)'}}>training samples</strong>.</p>
+          <p style={{marginTop:8}}>4. During detection, the live vector is compared to all samples using <strong style={{color:'var(--nb)'}}>Euclidean distance (KNN, k=5)</strong>. The sign with the highest weighted vote wins.</p>
+          <p style={{marginTop:8}}>5. A <strong style={{color:'var(--nb)'}}>10-frame majority vote</strong> filters out jitter and noise.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ROOT APP
+// ─────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState('TRAIN');
+  const [trainedSigns, setTrainedSigns] = useState([]);
+  const trainedSignsRef = useRef([]);
+
+  // Keep a ref in sync so the detect page's onResults callback always sees latest
+  useEffect(() => {
+    trainedSignsRef.current = trainedSigns;
+    AppState.trainedSigns = trainedSigns;
+  }, [trainedSigns]);
+
+  return (
+    <div>
+      <Navbar tab={tab} setTab={setTab}/>
+      {tab==='DETECT'   && <DetectPage  trainedSigns={trainedSignsRef}/>}
+      {tab==='TRAIN'    && <TrainPage   trainedSigns={trainedSigns} setTrainedSigns={setTrainedSigns}/>}
+      {tab==='SETTINGS' && <SettingsPage trainedSigns={trainedSigns} setTrainedSigns={setTrainedSigns}/>}
+      <footer style={{textAlign:'center',padding:'32px 20px',borderTop:'1px solid var(--dim)',color:'var(--tm)',fontSize:11,fontFamily:'JetBrains Mono'}}>
+        <span className="nt" style={{fontWeight:700,fontSize:13}}>SignBridge</span> · Learn-only detection · MediaPipe Hands · KNN classifier
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
